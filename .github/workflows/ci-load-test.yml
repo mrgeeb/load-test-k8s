@@ -30,29 +30,31 @@ jobs:
           echo "Waiting for ingress-nginx namespace..."
           sleep 10
           
-          # Patch the deployment to remove node affinity and add tolerations
-          echo "Patching ingress controller to tolerate not-ready nodes..."
-          kubectl patch deployment ingress-nginx-controller -n ingress-nginx --type='json' -p='[
-            {"op": "remove", "path": "/spec/template/spec/nodeSelector"},
-            {"op": "remove", "path": "/spec/template/spec/affinity"}
-          ]' 2>/dev/null || true
+          # Wait for deployment to exist
+          kubectl wait --for condition=established crd/ingressclasses.networking.k8s.io --timeout=30s || true
           
-          # Add tolerations for not-ready and unreachable taints
-          kubectl patch deployment ingress-nginx-controller -n ingress-nginx -p '{
+          echo "Patching ingress controller deployment..."
+          # Delete the existing pod to force recreation with new tolerations
+          kubectl delete pod -n ingress-nginx -l app.kubernetes.io/component=controller --ignore-not-found=true
+          
+          # Patch to add proper tolerations for all taints
+          kubectl patch deployment ingress-nginx-controller -n ingress-nginx --type merge -p '{
             "spec": {
               "template": {
                 "spec": {
                   "tolerations": [
-                    {"key": "node.kubernetes.io/not-ready", "operator": "Exists", "effect": "NoExecute"},
-                    {"key": "node.kubernetes.io/unreachable", "operator": "Exists", "effect": "NoExecute"}
+                    {"key": "node-role.kubernetes.io/control-plane", "operator": "Exists", "effect": "NoSchedule"},
+                    {"key": "node-role.kubernetes.io/control-plane", "operator": "Exists", "effect": "NoExecute"},
+                    {"key": "node.kubernetes.io/not-ready", "operator": "Exists", "effect": "NoExecute", "tolerationSeconds": 300},
+                    {"key": "node.kubernetes.io/unreachable", "operator": "Exists", "effect": "NoExecute", "tolerationSeconds": 300}
                   ]
                 }
               }
             }
-          }' 2>/dev/null || true
+          }' 2>&1 | grep -v "Warning" || true
           
-          echo "Waiting for controller pod to be ready..."
-          kubectl wait --namespace ingress-nginx --for=condition=ready pod --selector=app.kubernetes.io/component=controller --timeout=300s || (echo "Controller pod failed to start:" && kubectl describe pods -n ingress-nginx && exit 1)
+          echo "Waiting for controller pod to be ready (this may take 2-3 minutes)..."
+          kubectl wait --namespace ingress-nginx --for=condition=ready pod --selector=app.kubernetes.io/component=controller --timeout=600s || (echo "Controller pod failed to start:" && kubectl describe pods -n ingress-nginx && kubectl logs -n ingress-nginx -l app.kubernetes.io/component=controller --tail=50 && exit 1)
       
       - name: Deploy foo and bar services
         run: |
