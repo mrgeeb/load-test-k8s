@@ -1,0 +1,30 @@
+{
+  "totalRequests": ,
+  "successfulRequests": ,
+  "failedRequests": ,
+  "failureRate": ,
+  "requestsPerSec": ,
+  "stats": {
+    "avg": 0,
+    "min": ,
+    "max": ,
+    "p50": ,
+    "p90": ,
+    "p95": ,
+    "p99": 
+  },
+  "endpoints": [
+    {
+      "host": "foo.localhost",
+      "successCount": 5404,
+      "failureCount": 0,
+      "avgResponseTime": 81.3744
+    },
+    {
+      "host": "bar.localhost",
+      "successCount": 5410,
+      "failureCount": 0,
+      "avgResponseTime": 81.0349
+    }
+  ]
+}

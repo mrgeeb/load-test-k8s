@@ -1,0 +1,23 @@
+Load Test Results
+=================
+
+Total Requests:    10814
+Successful: 10814
+Failed: 0
+Failure Rate: 0%
+Requests/sec: 180.23
+
+Response Time Statistics (ms)
+==============================
+Average: 81.20
+Min: 24
+Max: 293
+P50: 75
+P90: 114
+P95: 136
+P99: 176
+
+Per-Host Breakdown
+==================
+  foo.localhost: 5404 requests, 5404 passed, 0 failed (avg: 81.37ms)
+  bar.localhost: 5410 requests, 5410 passed, 0 failed (avg: 81.03ms)
