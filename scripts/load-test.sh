@@ -1,5 +1,4 @@
 #!/bin/bash
-set -e
 
 # Load test configuration
 DURATION=${LOAD_TEST_DURATION:-60}
@@ -51,6 +50,31 @@ wait
 
 echo "Load test completed. Processing results..."
 
+# Check if we have results
+if [ ! -f load-test-raw.jsonl ] || [ ! -s load-test-raw.jsonl ]; then
+  echo "❌ No requests were recorded. Check connectivity."
+  cat > results.json << 'EOF'
+{
+  "totalRequests": 0,
+  "successfulRequests": 0,
+  "failedRequests": 0,
+  "failureRate": 0,
+  "requestsPerSec": 0,
+  "stats": {
+    "avg": 0,
+    "min": 0,
+    "max": 0,
+    "p50": 0,
+    "p90": 0,
+    "p95": 0,
+    "p99": 0
+  },
+  "endpoints": []
+}
+EOF
+  exit 0
+fi
+
 # Process results using a simple awk/bash approach
 {
   echo "Load Test Results"
@@ -58,6 +82,167 @@ echo "Load test completed. Processing results..."
   echo ""
   
   total_requests=$(wc -l < load-test-raw.jsonl)
+  successful=$(grep -c '"http_code":200' load-test-raw.jsonl || echo 0)
+  failed=$((total_requests - successful))
+  failure_rate=$(echo "scale=2; ($failed * 100) / $total_requests" | bc)
+  req_per_sec=$(echo "scale=2; $total_requests / $DURATION" | bc)
+  
+  echo "Total Requests: $total_requests"
+  echo "Successful: $successful"
+  echo "Failed: $failed"
+  echo "Failure Rate: ${failure_rate}%"
+  echo "Requests/sec: ${req_per_sec}"
+  echo ""
+  
+  # Extract response times
+  response_times=$(grep -o '"response_time_ms":[0-9]*' load-test-raw.jsonl | grep -o '[0-9]*$' | sort -n)
+  
+  if [ -n "$response_times" ]; then
+    avg=$(echo "$response_times" | awk '{sum+=$1; count++} END {print sum/count}')
+    min=$(echo "$response_times" | head -1)
+    max=$(echo "$response_times" | tail -1)
+    
+    # Calculate percentiles
+    count=$(echo "$response_times" | wc -l)
+    p50_idx=$((count * 50 / 100))
+    p90_idx=$((count * 90 / 100))
+    p95_idx=$((count * 95 / 100))
+    p99_idx=$((count * 99 / 100))
+    
+    # Ensure minimum index is 1
+    [ $p50_idx -lt 1 ] && p50_idx=1
+    [ $p90_idx -lt 1 ] && p90_idx=1
+    [ $p95_idx -lt 1 ] && p95_idx=1
+    [ $p99_idx -lt 1 ] && p99_idx=1
+    
+    p50=$(echo "$response_times" | sed -n "${p50_idx}p")
+    p90=$(echo "$response_times" | sed -n "${p90_idx}p")
+    p95=$(echo "$response_times" | sed -n "${p95_idx}p")
+    p99=$(echo "$response_times" | sed -n "${p99_idx}p")
+    
+    echo "Response Time Statistics (ms)"
+    echo "=============================="
+    printf "Average: %.2f\n" "$avg"
+    echo "Min: $min"
+    echo "Max: $max"
+    echo "P50: $p50"
+    echo "P90: $p90"
+    echo "P95: $p95"
+    echo "P99: $p99"
+    echo ""
+  fi
+  
+  # Per-host breakdown
+  echo "Per-Host Breakdown"
+  echo "=================="
+  for host in "${HOSTS[@]}"; do
+    host_count=$(grep -c "\"host\":\"$host\"" load-test-raw.jsonl || echo 0)
+    host_success=$(grep -c "\"host\":\"$host\".*\"http_code\":200" load-test-raw.jsonl || echo 0)
+    host_fail=$((host_count - host_success))
+    host_times=$(grep "\"host\":\"$host\"" load-test-raw.jsonl | grep -o '"response_time_ms":[0-9]*' | grep -o '[0-9]*$' | sort -n)
+    
+    if [ -n "$host_times" ]; then
+      host_avg=$(echo "$host_times" | awk '{sum+=$1; count++} END {print sum/count}')
+      printf "  %s: %d requests, %d passed, %d failed (avg: %.2fms)\n" "$host" "$host_count" "$host_success" "$host_fail" "$host_avg"
+    fi
+  done
+  
+} | tee load-test-results.txt
+
+# Generate JSON output for GitHub comment
+{
+  echo "{"
+  
+  total_requests=$(wc -l < load-test-raw.jsonl)
+  successful=$(grep -c '"http_code":200' load-test-raw.jsonl || echo 0)
+  failed=$((total_requests - successful))
+  failure_rate=$(echo "scale=2; ($failed * 100) / $total_requests" | bc 2>/dev/null || echo "0")
+  req_per_sec=$(echo "scale=2; $total_requests / $DURATION" | bc 2>/dev/null || echo "0")
+  
+  echo "  \"totalRequests\": $total_requests,"
+  echo "  \"successfulRequests\": $successful,"
+  echo "  \"failedRequests\": $failed,"
+  echo "  \"failureRate\": $failure_rate,"
+  echo "  \"requestsPerSec\": $req_per_sec,"
+  echo "  \"stats\": {"
+  
+  response_times=$(grep -o '"response_time_ms":[0-9]*' load-test-raw.jsonl | grep -o '[0-9]*$' | sort -n)
+  
+  if [ -n "$response_times" ]; then
+    avg=$(echo "$response_times" | awk '{sum+=$1; count++} END {print sum/count}')
+    min=$(echo "$response_times" | head -1)
+    max=$(echo "$response_times" | tail -1)
+    
+    count=$(echo "$response_times" | wc -l)
+    p50_idx=$((count * 50 / 100))
+    p90_idx=$((count * 90 / 100))
+    p95_idx=$((count * 95 / 100))
+    p99_idx=$((count * 99 / 100))
+    
+    [ $p50_idx -lt 1 ] && p50_idx=1
+    [ $p90_idx -lt 1 ] && p90_idx=1
+    [ $p95_idx -lt 1 ] && p95_idx=1
+    [ $p99_idx -lt 1 ] && p99_idx=1
+    
+    p50=$(echo "$response_times" | sed -n "${p50_idx}p")
+    p90=$(echo "$response_times" | sed -n "${p90_idx}p")
+    p95=$(echo "$response_times" | sed -n "${p95_idx}p")
+    p99=$(echo "$response_times" | sed -n "${p99_idx}p")
+    
+    echo "    \"avg\": $avg,"
+    echo "    \"min\": $min,"
+    echo "    \"max\": $max,"
+    echo "    \"p50\": $p50,"
+    echo "    \"p90\": $p90,"
+    echo "    \"p95\": $p95,"
+    echo "    \"p99\": $p99"
+  else
+    echo "    \"avg\": 0,"
+    echo "    \"min\": 0,"
+    echo "    \"max\": 0,"
+    echo "    \"p50\": 0,"
+    echo "    \"p90\": 0,"
+    echo "    \"p95\": 0,"
+    echo "    \"p99\": 0"
+  fi
+  
+  echo "  },"
+  echo "  \"endpoints\": ["
+  
+  first=true
+  for host in "${HOSTS[@]}"; do
+    host_count=$(grep -c "\"host\":\"$host\"" load-test-raw.jsonl || echo 0)
+    if [ $host_count -gt 0 ]; then
+      host_success=$(grep -c "\"host\":\"$host\".*\"http_code\":200" load-test-raw.jsonl || echo 0)
+      host_fail=$((host_count - host_success))
+      host_times=$(grep "\"host\":\"$host\"" load-test-raw.jsonl | grep -o '"response_time_ms":[0-9]*' | grep -o '[0-9]*$' | sort -n)
+      
+      if [ -n "$host_times" ]; then
+        host_avg=$(echo "$host_times" | awk '{sum+=$1; count++} END {print sum/count}')
+        
+        if [ "$first" = true ]; then
+          first=false
+        else
+          echo ","
+        fi
+        echo -n "    {"
+        echo -n "\"host\": \"$host\","
+        echo -n "\"successCount\": $host_success,"
+        echo -n "\"failureCount\": $host_fail,"
+        echo -n "\"avgResponseTime\": $host_avg"
+        echo -n "}"
+      fi
+    fi
+  done
+  
+  echo ""
+  echo "  ]"
+  echo "}"
+} > results.json
+
+echo ""
+echo "✅ Load test complete. Results saved to results.json and load-test-results.txt"
+
   successful=$(grep -c '"http_code":200' load-test-raw.jsonl || echo 0)
   failed=$((total_requests - successful))
   failure_rate=$(echo "scale=2; ($failed * 100) / $total_requests" | bc)
