@@ -27,7 +27,10 @@ jobs:
       - name: Install Ingress controller
         run: |
           kubectl apply -f https://raw.githubusercontent.com/kubernetes/ingress-nginx/controller-v1.8.1/deploy/static/provider/kind/deploy.yaml
-          kubectl wait --namespace ingress-nginx --for=condition=ready pod --selector=app.kubernetes.io/component=controller --timeout=120s
+          echo "Waiting for ingress-nginx namespace..."
+          kubectl get ns ingress-nginx || echo "Namespace not ready yet"
+          echo "Waiting for controller pod..."
+          kubectl wait --namespace ingress-nginx --for=condition=ready pod --selector=app.kubernetes.io/component=controller --timeout=300s || (echo "Controller pod failed to start:" && kubectl describe pods -n ingress-nginx && exit 1)
       
       - name: Deploy foo and bar services
         run: |
@@ -69,44 +72,60 @@ jobs:
       - name: Get load test results
         if: always()
         run: |
-          cat load-test-results.json > results.json
-          cat load-test-results.txt
+          if [ -f load-test-results.json ]; then
+            cat load-test-results.json > results.json
+            cat load-test-results.txt
+          else
+            echo "❌ Load test results file not found"
+            ls -la
+            exit 1
+          fi
       
       - name: Comment PR with results
-        if: github.event_name == 'pull_request'
+        if: github.event_name == 'pull_request' && success()
         uses: actions/github-script@v7
         with:
           script: |
             const fs = require('fs');
-            const results = JSON.parse(fs.readFileSync('results.json', 'utf8'));
-            
-            const comment = `## 📊 Load Testing Results
-            
-            ### Summary
-            - **Total Requests**: ${results.totalRequests}
-            - **Successful Requests**: ${results.successfulRequests}
-            - **Failed Requests**: ${results.failedRequests}
-            - **Failure Rate**: ${results.failureRate}%
-            - **Requests/sec**: ${results.requestsPerSec.toFixed(2)}
-            
-            ### Response Time Statistics (ms)
-            - **Average**: ${results.stats.avg.toFixed(2)}
-            - **Min**: ${results.stats.min.toFixed(2)}
-            - **Max**: ${results.stats.max.toFixed(2)}
-            - **P50**: ${results.stats.p50.toFixed(2)}
-            - **P90**: ${results.stats.p90.toFixed(2)}
-            - **P95**: ${results.stats.p95.toFixed(2)}
-            - **P99**: ${results.stats.p99.toFixed(2)}
-            
-            ### Endpoint Breakdown
-            ${results.endpoints.map(ep => `- **${ep.host}**: ${ep.successCount} passed, ${ep.failureCount} failed (avg: ${ep.avgResponseTime.toFixed(2)}ms)`).join('\n')}
-            
-            *Load test run completed at ${new Date().toISOString()}*
-            `;
-            
-            github.rest.issues.createComment({
-              issue_number: context.issue.number,
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              body: comment
-            });
+            try {
+              const results = JSON.parse(fs.readFileSync('results.json', 'utf8'));
+              
+              const comment = `## 📊 Load Testing Results
+              
+              ### Summary
+              - **Total Requests**: ${results.totalRequests}
+              - **Successful Requests**: ${results.successfulRequests}
+              - **Failed Requests**: ${results.failedRequests}
+              - **Failure Rate**: ${results.failureRate}%
+              - **Requests/sec**: ${results.requestsPerSec.toFixed(2)}
+              
+              ### Response Time Statistics (ms)
+              - **Average**: ${results.stats.avg.toFixed(2)}
+              - **Min**: ${results.stats.min.toFixed(2)}
+              - **Max**: ${results.stats.max.toFixed(2)}
+              - **P50**: ${results.stats.p50.toFixed(2)}
+              - **P90**: ${results.stats.p90.toFixed(2)}
+              - **P95**: ${results.stats.p95.toFixed(2)}
+              - **P99**: ${results.stats.p99.toFixed(2)}
+              
+              ### Endpoint Breakdown
+              ${results.endpoints.map(ep => `- **${ep.host}**: ${ep.successCount} passed, ${ep.failureCount} failed (avg: ${ep.avgResponseTime.toFixed(2)}ms)`).join('\n')}
+              
+              *Load test run completed at ${new Date().toISOString()}*
+              `;
+              
+              github.rest.issues.createComment({
+                issue_number: context.issue.number,
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                body: comment
+              });
+            } catch (error) {
+              console.error('Error posting comment:', error);
+              github.rest.issues.createComment({
+                issue_number: context.issue.number,
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                body: `❌ Load test failed. Check workflow logs for details.`
+              });
+            }
