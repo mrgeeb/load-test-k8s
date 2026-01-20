@@ -26,14 +26,8 @@ jobs:
       
       - name: Install Ingress controller
         run: |
-          # Download the ingress controller manifest
-          curl -s https://raw.githubusercontent.com/kubernetes/ingress-nginx/controller-v1.8.1/deploy/static/provider/kind/deploy.yaml -o /tmp/ingress-nginx.yaml
-          
-          # Modify to add tolerations and remove restrictive constraints
-          cat /tmp/ingress-nginx.yaml | sed '/^      terminationGracePeriodSeconds:/a\      tolerations:\n      - key: "node-role.kubernetes.io/control-plane"\n        operator: "Exists"\n        effect: "NoSchedule"\n      - key: "node-role.kubernetes.io/control-plane"\n        operator: "Exists"\n        effect: "NoExecute"\n      - key: "node.kubernetes.io/not-ready"\n        operator: "Exists"\n        effect: "NoExecute"\n        tolerationSeconds: 300\n      - key: "node.kubernetes.io/unreachable"\n        operator: "Exists"\n        effect: "NoExecute"\n        tolerationSeconds: 300' > /tmp/ingress-nginx-patched.yaml
-          
-          # Apply the modified manifest
-          kubectl apply -f /tmp/ingress-nginx-patched.yaml
+          echo "Installing NGINX ingress controller..."
+          kubectl apply -f ./k8s/ingress-nginx-controller.yaml
           
           echo "Waiting for controller pod to be ready..."
           kubectl wait --namespace ingress-nginx --for=condition=ready pod --selector=app.kubernetes.io/component=controller --timeout=300s || (echo "Controller pod failed to start:" && kubectl describe pods -n ingress-nginx && exit 1)
