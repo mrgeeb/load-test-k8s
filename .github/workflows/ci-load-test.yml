@@ -29,10 +29,6 @@ jobs:
           echo "Installing NGINX ingress controller..."
           kubectl apply -f ./k8s/ingress-nginx-controller.yaml
           
-          echo "Waiting for controller pod to be ready..."
-          kubectl wait --namespace ingress-nginx --for=condition=ready pod --selector=app.kubernetes.io/component=controller --timeout=300s || (echo "Controller pod failed to start:" && kubectl describe pods -n ingress-nginx && exit 1)
-          kubectl wait --namespace ingress-nginx --for=condition=ready pod --selector=app.kubernetes.io/component=controller --timeout=300s || (echo "Controller pod failed to start:" && kubectl describe pods -n ingress-nginx && kubectl get events -n ingress-nginx && exit 1)
-          
           echo "Waiting for controller pod to be ready (this may take 2-3 minutes)..."
           kubectl wait --namespace ingress-nginx --for=condition=ready pod --selector=app.kubernetes.io/component=controller --timeout=600s || (echo "Controller pod failed to start:" && kubectl describe pods -n ingress-nginx && kubectl logs -n ingress-nginx -l app.kubernetes.io/component=controller --tail=50 && exit 1)
       
