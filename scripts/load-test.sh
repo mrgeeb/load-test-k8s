@@ -91,48 +91,62 @@ if [ -n "$response_times" ]; then
   min=$(echo "$response_times" | head -1)
   max=$(echo "$response_times" | tail -1)
   count=$(echo "$response_times" | wc -l)
-  p50=$(echo "$response_times" | sed -n "$((count * 50 / 100))p")
-  p90=$(echo "$response_times" | sed -n "$((count * 90 / 100))p")
-  p95=$(echo "$response_times" | sed -n "$((count * 95 / 100))p")
-  p99=$(echo "$response_times" | sed -n "$((count * 99 / 100))p")
+  
+  # Handle edge cases for percentile indices
+  p50_idx=$((count * 50 / 100))
+  p90_idx=$((count * 90 / 100))
+  p95_idx=$((count * 95 / 100))
+  p99_idx=$((count * 99 / 100))
+  
+  [ $p50_idx -lt 1 ] && p50_idx=1
+  [ $p90_idx -lt 1 ] && p90_idx=1
+  [ $p95_idx -lt 1 ] && p95_idx=1
+  [ $p99_idx -lt 1 ] && p99_idx=1
+  
+  p50=$(echo "$response_times" | sed -n "${p50_idx}p")
+  p90=$(echo "$response_times" | sed -n "${p90_idx}p")
+  p95=$(echo "$response_times" | sed -n "${p95_idx}p")
+  p99=$(echo "$response_times" | sed -n "${p99_idx}p")
 fi
 
 # Output text results
-echo "Load Test Results" | tee -a load-test-results.txt
-echo "=================" | tee -a load-test-results.txt
-echo "" | tee -a load-test-results.txt
-printf "Total Requests: %d\n" "$total_requests" | tee -a load-test-results.txt
-printf "Successful: %d\n" "$successful" | tee -a load-test-results.txt
-printf "Failed: %d\n" "$failed" | tee -a load-test-results.txt
-printf "Failure Rate: %s%%\n" "$failure_rate" | tee -a load-test-results.txt
-printf "Requests/sec: %s\n\n" "$req_per_sec" | tee -a load-test-results.txt
+{
+  echo "Load Test Results"
+  echo "================="
+  echo ""
+  printf "Total Requests: %d\n" "$total_requests"
+  printf "Successful: %d\n" "$successful"
+  printf "Failed: %d\n" "$failed"
+  printf "Failure Rate: %s%%\n" "$failure_rate"
+  printf "Requests/sec: %s\n\n" "$req_per_sec"
 
-if [ -n "$response_times" ]; then
-  echo "Response Time Statistics (ms)" | tee -a load-test-results.txt
-  echo "==============================" | tee -a load-test-results.txt
-  printf "Average: %.2f\n" "$avg" | tee -a load-test-results.txt
-  printf "Min: %s\n" "$min" | tee -a load-test-results.txt
-  printf "Max: %s\n" "$max" | tee -a load-test-results.txt
-  printf "P50: %s\n" "$p50" | tee -a load-test-results.txt
-  printf "P90: %s\n" "$p90" | tee -a load-test-results.txt
-  printf "P95: %s\n" "$p95" | tee -a load-test-results.txt
-  printf "P99: %s\n\n" "$p99" | tee -a load-test-results.txt
-fi
-
-echo "Per-Host Breakdown" | tee -a load-test-results.txt
-echo "==================" | tee -a load-test-results.txt
-for host in "${HOSTS[@]}"; do
-  host_count=$(grep -c "\"host\":\"$host\"" load-test-raw.jsonl || echo 0)
-  if [ $host_count -gt 0 ]; then
-    host_success=$(grep -c "\"host\":\"$host\".*\"http_code\":200" load-test-raw.jsonl || echo 0)
-    host_fail=$((host_count - host_success))
-    host_times=$(grep "\"host\":\"$host\"" load-test-raw.jsonl | grep -o '"response_time_ms":[0-9]*' | grep -o '[0-9]*$' | sort -n)
-    if [ -n "$host_times" ]; then
-      host_avg=$(echo "$host_times" | awk '{sum+=$1; count++} END {print sum/count}')
-      printf "  %s: %d requests, %d passed, %d failed (avg: %.2fms)\n" "$host" "$host_count" "$host_success" "$host_fail" "$host_avg" | tee -a load-test-results.txt
-    fi
+  if [ -n "$response_times" ]; then
+    echo "Response Time Statistics (ms)"
+    echo "=============================="
+    printf "Average: %.2f\n" "$avg"
+    printf "Min: %s\n" "$min"
+    printf "Max: %s\n" "$max"
+    printf "P50: %s\n" "$p50"
+    printf "P90: %s\n" "$p90"
+    printf "P95: %s\n" "$p95"
+    printf "P99: %s\n\n" "$p99"
   fi
-done
+
+  echo "Per-Host Breakdown"
+  echo "=================="
+  for host in "${HOSTS[@]}"; do
+    host_count=$(grep -c "\"host\":\"$host\"" load-test-raw.jsonl || echo 0)
+    if [ $host_count -gt 0 ]; then
+      host_success=$(grep -c "\"host\":\"$host\".*\"http_code\":200" load-test-raw.jsonl || echo 0)
+      host_fail=$((host_count - host_success))
+      host_times=$(grep "\"host\":\"$host\"" load-test-raw.jsonl | grep -o '"response_time_ms":[0-9]*' | grep -o '[0-9]*$' | sort -n)
+      if [ -n "$host_times" ]; then
+        host_avg=$(echo "$host_times" | awk '{sum+=$1; count++} END {print sum/count}')
+        printf "  %s: %d requests, %d passed, %d failed (avg: %.2fms)\n" "$host" "$host_count" "$host_success" "$host_fail" "$host_avg"
+      fi
+    fi
+  done
+} | tee load-test-results.txt
 
 # Generate JSON output
 cat > results.json << EOF
@@ -173,110 +187,6 @@ for host in "${HOSTS[@]}"; do
   fi
 done
 
-cat >> results.json << 'EOF'
-  ]
-}
-EOF
-
-echo ""
-echo "✅ Load test complete. Results saved to results.json and load-test-results.txt"
-
-  successful=$(grep -c '"http_code":200' load-test-raw.jsonl || echo 0)
-  failed=$((total_requests - successful))
-  failure_rate=$(echo "scale=2; ($failed * 100) / $total_requests" | bc)
-  req_per_sec=$(echo "scale=2; $total_requests / $DURATION" | bc)
-  
-  echo "Total Requests: $total_requests"
-  echo "Successful: $successful"
-  echo "Failed: $failed"
-  echo "Failure Rate: ${failure_rate}%"
-  echo "Requests/sec: ${req_per_sec}"
-  echo ""
-  
-  # Extract response times
-  response_times=$(grep -o '"response_time_ms":[0-9]*' load-test-raw.jsonl | grep -o '[0-9]*$' | sort -n)
-  
-  if [ -n "$response_times" ]; then
-    avg=$(echo "$response_times" | awk '{sum+=$1; count++} END {print sum/count}')
-    min=$(echo "$response_times" | head -1)
-    max=$(echo "$response_times" | tail -1)
-    
-    # Calculate percentiles
-    count=$(echo "$response_times" | wc -l)
-    p50_idx=$((count * 50 / 100))
-    p90_idx=$((count * 90 / 100))
-    p95_idx=$((count * 95 / 100))
-    p99_idx=$((count * 99 / 100))
-    
-    p50=$(echo "$response_times" | sed -n "${p50_idx}p")
-    p90=$(echo "$response_times" | sed -n "${p90_idx}p")
-    p95=$(echo "$response_times" | sed -n "${p95_idx}p")
-    p99=$(echo "$response_times" | sed -n "${p99_idx}p")
-    
-    echo "Response Time Statistics (ms)"
-    echo "=============================="
-    printf "Average: %.2f\n" "$avg"
-    echo "Min: $min"
-    echo "Max: $max"
-    echo "P50: $p50"
-    echo "P90: $p90"
-    echo "P95: $p95"
-    echo "P99: $p99"
-    echo ""
-  fi
-  
-  # Per-host breakdown
-  echo "Per-Host Breakdown"
-  echo "=================="
-  for host in "${HOSTS[@]}"; do
-    host_count=$(grep -c "\"host\":\"$host\"" load-test-raw.jsonl || echo 0)
-    host_success=$(grep -c "\"host\":\"$host\".*\"http_code\":200" load-test-raw.jsonl || echo 0)
-    host_fail=$((host_count - host_success))
-    host_times=$(grep "\"host\":\"$host\"" load-test-raw.jsonl | grep -o '"response_time_ms":[0-9]*' | grep -o '[0-9]*$' | sort -n)
-    
-    if [ -n "$host_times" ]; then
-      host_avg=$(echo "$host_times" | awk '{sum+=$1; count++} END {print sum/count}')
-      printf "  %s: %d requests, %d passed, %d failed (avg: %.2fms)\n" "$host" "$host_count" "$host_success" "$host_fail" "$host_avg"
-    fi
-  done
-  
-} | tee load-test-results.txt
-
-# Generate JSON output for GitHub comment
-{
-  echo "{"
-  echo "  \"totalRequests\": $total_requests,"
-  echo "  \"successfulRequests\": $successful,"
-  echo "  \"failedRequests\": $failed,"
-  echo "  \"failureRate\": $failure_rate,"
-  echo "  \"requestsPerSec\": $req_per_sec,"
-  echo "  \"stats\": {"
-  echo "    \"avg\": $(echo "$response_times" | awk '{sum+=$1; count++} END {print sum/count}'),"
-  echo "    \"min\": $(echo "$response_times" | head -1),"
-  echo "    \"max\": $(echo "$response_times" | tail -1),"
-  echo "    \"p50\": $p50,"
-  echo "    \"p90\": $p90,"
-  echo "    \"p95\": $p95,"
-  echo "    \"p99\": $p99"
-  echo "  },"
-  echo "  \"endpoints\": ["
-  
-  first=true
-  for host in "${HOSTS[@]}"; do
-    host_count=$(grep -c "\"host\":\"$host\"" load-test-raw.jsonl || echo 0)
-    host_success=$(grep -c "\"host\":\"$host\".*\"http_code\":200" load-test-raw.jsonl || echo 0)
-    host_fail=$((host_count - host_success))
-    host_times=$(grep "\"host\":\"$host\"" load-test-raw.jsonl | grep -o '"response_time_ms":[0-9]*' | grep -o '[0-9]*$' | sort -n)
-    host_avg=$(echo "$host_times" | awk '{sum+=$1; count++} END {print sum/count}')
-    
-    if [ "$first" = true ]; then
-      first=false
-    else
-      echo ","
-    fi
-    echo "    {"
-    echo "      \"host\": \"$host\","
-    echo "      \"successCount\": $host_success,"
 cat >> results.json << 'EOF'
   ]
 }
