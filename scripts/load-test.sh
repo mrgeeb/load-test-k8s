@@ -53,7 +53,7 @@ echo "Load test completed. Processing results..."
 # Check if we have results
 if [ ! -f load-test-raw.jsonl ] || [ ! -s load-test-raw.jsonl ]; then
   echo "❌ No requests were recorded. Check connectivity."
-  cat > results.json << 'EOF'
+  cat > load-test-results.json << 'EOF'
 {
   "totalRequests": 0,
   "successfulRequests": 0,
@@ -149,7 +149,7 @@ fi
 } | tee load-test-results.txt
 
 # Generate JSON output
-cat > results.json << EOF
+cat > load-test-results.json << EOF
 {
   "totalRequests": $total_requests,
   "successfulRequests": $successful,
@@ -178,19 +178,19 @@ for host in "${HOSTS[@]}"; do
     if [ -n "$host_times" ]; then
       host_avg=$(echo "$host_times" | awk '{sum+=$1; count++} END {print sum/count}')
       if [ "$first" = true ]; then
-        echo "    {\"host\": \"$host\", \"successCount\": $host_success, \"failureCount\": $host_fail, \"avgResponseTime\": $host_avg}" >> results.json
+        echo "    {\"host\": \"$host\", \"successCount\": $host_success, \"failureCount\": $host_fail, \"avgResponseTime\": $host_avg}" >> load-test-results.json
         first=false
       else
-        echo "    ,{\"host\": \"$host\", \"successCount\": $host_success, \"failureCount\": $host_fail, \"avgResponseTime\": $host_avg}" >> results.json
+        echo "    ,{\"host\": \"$host\", \"successCount\": $host_success, \"failureCount\": $host_fail, \"avgResponseTime\": $host_avg}" >> load-test-results.json
       fi
     fi
   fi
 done
 
-cat >> results.json << 'EOF'
+cat >> load-test-results.json << 'EOF'
   ]
 }
 EOF
 
 echo ""
-echo "✅ Load test complete. Results saved to results.json and load-test-results.txt"
+echo "✅ Load test complete. Results saved to load-test-results.json and load-test-results.txt"
