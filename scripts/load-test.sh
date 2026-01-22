@@ -15,9 +15,6 @@ echo "Test Duration: ${DURATION} seconds"
 echo "Concurrency Level: ${CONCURRENCY} concurrent workers"
 echo "Target Hosts: ${HOSTS[@]}"
 echo ""
-echo "We are going to send requests to both services simultaneously"
-echo "and measure their performance under load..."
-echo ""
 
 # Initialize result files
 > load-test-results.txt
@@ -64,21 +61,14 @@ if [ ! -f load-test-raw.jsonl ] || [ ! -s load-test-raw.jsonl ]; then
   echo "No requests were recorded. There may be a connectivity issue."
   cat > load-test-results.json << 'EOF'
 {
-  "totalRequests": 0,
-  "successfulRequests": 0,
-  "failedRequests": 0,
   "failureRate": 0,
   "requestsPerSec": 0,
   "stats": {
     "avg": 0,
-    "min": 0,
-    "max": 0,
-    "p50": 0,
     "p90": 0,
     "p95": 0,
     "p99": 0
-  },
-  "endpoints": []
+  }
 }
 EOF
   exit 0
@@ -142,44 +132,14 @@ fi
 # Generate JSON output
 cat > load-test-results.json << EOF
 {
-  "totalRequests": $total_requests,
-  "successfulRequests": $successful,
-  "failedRequests": $failed,
   "failureRate": $failure_rate,
   "requestsPerSec": $req_per_sec,
   "stats": {
     "avg": $avg,
-    "min": $min,
-    "max": $max,
-    "p50": $p50,
     "p90": $p90,
     "p95": $p95,
     "p99": $p99
-  },
-  "endpoints": [
-EOF
-
-first=true
-for host in "${HOSTS[@]}"; do
-  host_count=$(grep -c "\"host\":\"$host\"" load-test-raw.jsonl || echo 0)
-  if [ $host_count -gt 0 ]; then
-    host_success=$(grep -c "\"host\":\"$host\".*\"http_code\":200" load-test-raw.jsonl || echo 0)
-    host_fail=$((host_count - host_success))
-    host_times=$(grep "\"host\":\"$host\"" load-test-raw.jsonl | grep -o '"response_time_ms":[0-9]*' | grep -o '[0-9]*$' | sort -n)
-    if [ -n "$host_times" ]; then
-      host_avg=$(echo "$host_times" | awk '{sum+=$1; count++} END {print sum/count}')
-      if [ "$first" = true ]; then
-        echo "    {\"host\": \"$host\", \"successCount\": $host_success, \"failureCount\": $host_fail, \"avgResponseTime\": $host_avg}" >> load-test-results.json
-        first=false
-      else
-        echo "    ,{\"host\": \"$host\", \"successCount\": $host_success, \"failureCount\": $host_fail, \"avgResponseTime\": $host_avg}" >> load-test-results.json
-      fi
-    fi
-  fi
-done
-
-cat >> load-test-results.json << 'EOF'
-  ]
+  }
 }
 EOF
 
