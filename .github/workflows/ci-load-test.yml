@@ -42,11 +42,9 @@ jobs:
           kubectl apply -f ./k8s/bar-deployment.yaml
           kubectl apply -f ./k8s/ingress.yaml
           
-          # Wait for ingress to exist
           echo "Waiting for ingress to be created..."
           kubectl wait --for=condition=established ingress/app-ingress -n app --timeout=30s 2>/dev/null || true
           
-          # Verify ingress was created
           kubectl get ingress app-ingress -n app
           echo "Ingress configured successfully"
       
@@ -102,7 +100,7 @@ jobs:
             {
               echo 'comment<<EOF'
               jq -r '
-                "Load Testing Results\n\nSummary\nTotal Requests: \(.totalRequests // 0)\nSuccessful Requests: \(.successfulRequests // 0)\nFailed Requests: \(.failedRequests // 0)\nFailure Rate: \(.failureRate // 0)%\nRequests per second: \(.requestsPerSec // 0)\n\nResponse Time Statistics (milliseconds)\nAverage: \(.stats.avg // 0)\nMin: \(.stats.min // 0)\nMax: \(.stats.max // 0)\nP50: \(.stats.p50 // 0)\nP90: \(.stats.p90 // 0)\nP95: \(.stats.p95 // 0)\nP99: \(.stats.p99 // 0)\n\nEndpoint Breakdown\n" + (if (.endpoints | type) == "array" then (.endpoints | map("\(.host): \(.successCount) passed, \(.failureCount) failed (average: \(.avgResponseTime)ms)") | join("\n")) else "No endpoint data" end) + "\n\nLoad test completed at '$(date -u +%Y-%m-%dT%H:%M:%SZ)'"
+                "Load Test Results\n\nResponse Times (ms)\nAverage: \(.stats.avg // 0)\nP90: \(.stats.p90 // 0)\nP95: \(.stats.p95 // 0)\nP99: \(.stats.p99 // 0)\n\nFailure Rate: \(.failureRate // 0)%\nThroughput: \(.requestsPerSec // 0) requests/second"
               ' results.json
               echo 'EOF'
             } >> $GITHUB_OUTPUT
@@ -125,24 +123,3 @@ jobs:
               issue_number: context.issue.number,
               body: process.env.COMMENT
             });
-
-  # create-pr:
-  #   needs: load-test
-  #   if: success() && github.event_name == 'pull_request'
-  #   runs-on: ubuntu-latest
-  #   permissions:
-  #     pull-requests: write
-  #     contents: write
-  #   steps:
-  #     - name: Checkout code
-  #       uses: actions/checkout@v4
-
-  #     - name: Create PR after tests pass
-  #       uses: peter-evans/create-pull-request@v5
-  #       with:
-  #         commit-message: 'Load test passed - ready for merge'
-  #         title: 'Load test passed'
-  #         body: 'All load tests have passed successfully. Ready for merge.'
-  #         branch: test-passed-${{ github.run_number }}
-  #         base: main
-  #         delete-branch: true

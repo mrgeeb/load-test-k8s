@@ -1,15 +1,22 @@
 #!/bin/bash
 
+set -e
+
 # Load test configuration
 DURATION=${LOAD_TEST_DURATION:-60}
 CONCURRENCY=${LOAD_TEST_CONCURRENCY:-10}
 HOSTS=("foo.localhost" "bar.localhost")
 BASE_URL="http://127.0.0.1:8080"
 
-echo "Starting load test..."
-echo "Duration: ${DURATION}s"
-echo "Concurrency: ${CONCURRENCY}"
-echo "Hosts: ${HOSTS[@]}"
+echo ""
+echo "Load Test Starting"
+echo "=================="
+echo "Test Duration: ${DURATION} seconds"
+echo "Concurrency Level: ${CONCURRENCY} concurrent workers"
+echo "Target Hosts: ${HOSTS[@]}"
+echo ""
+echo "We are going to send requests to both services simultaneously"
+echo "and measure their performance under load..."
 echo ""
 
 # Initialize result files
@@ -40,6 +47,7 @@ make_requests() {
 }
 
 # Run load test concurrently
+echo "Sending requests from $CONCURRENCY workers..."
 for ((i=0; i<$CONCURRENCY; i++)); do
   for host in "${HOSTS[@]}"; do
     make_requests "$host" "$DURATION" &
@@ -48,11 +56,12 @@ done
 
 wait
 
-echo "Load test completed. Processing results..."
+echo "Requests complete. Now let me analyze the results..."
+echo ""
 
 # Check if we have results
 if [ ! -f load-test-raw.jsonl ] || [ ! -s load-test-raw.jsonl ]; then
-  echo "❌ No requests were recorded. Check connectivity."
+  echo "No requests were recorded. There may be a connectivity issue."
   cat > load-test-results.json << 'EOF'
 {
   "totalRequests": 0,
@@ -111,41 +120,23 @@ fi
 
 # Output text results
 {
+  echo ""
   echo "Load Test Results"
   echo "================="
   echo ""
-  printf "Total Requests: %d\n" "$total_requests"
-  printf "Successful: %d\n" "$successful"
-  printf "Failed: %d\n" "$failed"
   printf "Failure Rate: %s%%\n" "$failure_rate"
-  printf "Requests/sec: %s\n\n" "$req_per_sec"
+  printf "Throughput: %s requests per second\n" "$req_per_sec"
+  echo ""
 
   if [ -n "$response_times" ]; then
-    echo "Response Time Statistics (ms)"
-    echo "=============================="
-    printf "Average: %.2f\n" "$avg"
-    printf "Min: %s\n" "$min"
-    printf "Max: %s\n" "$max"
-    printf "P50: %s\n" "$p50"
-    printf "P90: %s\n" "$p90"
-    printf "P95: %s\n" "$p95"
-    printf "P99: %s\n\n" "$p99"
+    echo "Response Times (milliseconds)"
+    echo "============================="
+    printf "Average: %.2f ms\n" "$avg"
+    printf "P90: %s ms\n" "$p90"
+    printf "P95: %s ms\n" "$p95"
+    printf "P99: %s ms\n" "$p99"
+    echo ""
   fi
-
-  echo "Per-Host Breakdown"
-  echo "=================="
-  for host in "${HOSTS[@]}"; do
-    host_count=$(grep -c "\"host\":\"$host\"" load-test-raw.jsonl || echo 0)
-    if [ $host_count -gt 0 ]; then
-      host_success=$(grep -c "\"host\":\"$host\".*\"http_code\":200" load-test-raw.jsonl || echo 0)
-      host_fail=$((host_count - host_success))
-      host_times=$(grep "\"host\":\"$host\"" load-test-raw.jsonl | grep -o '"response_time_ms":[0-9]*' | grep -o '[0-9]*$' | sort -n)
-      if [ -n "$host_times" ]; then
-        host_avg=$(echo "$host_times" | awk '{sum+=$1; count++} END {print sum/count}')
-        printf "  %s: %d requests, %d passed, %d failed (avg: %.2fms)\n" "$host" "$host_count" "$host_success" "$host_fail" "$host_avg"
-      fi
-    fi
-  done
 } | tee load-test-results.txt
 
 # Generate JSON output
@@ -193,4 +184,7 @@ cat >> load-test-results.json << 'EOF'
 EOF
 
 echo ""
-echo "✅ Load test complete. Results saved to load-test-results.json and load-test-results.txt"
+echo "Load test complete. Results have been saved:"
+echo "  - Summary: load-test-results.txt"
+echo "  - Raw data: load-test-results.json"
+echo ""

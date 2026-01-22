@@ -1,58 +1,82 @@
 #!/bin/bash
 
-echo "Performing health checks on deployments and ingress..."
+set -e
 
-# Check foo deployment
-echo "Checking foo deployment..."
+echo ""
+echo "Starting health checks to verify the cluster is ready..."
+echo ""
+
+# Check if the app namespace exists and has our deployments
+echo "Step 1: Checking if deployments are ready"
+echo "---"
+
+echo "Looking at the foo deployment..."
 FOO_STATUS=$(kubectl get deployment foo -n app -o jsonpath='{.status.conditions[?(@.type=="Available")].status}' 2>/dev/null || echo "NotFound")
 if [ "$FOO_STATUS" != "True" ]; then
-  echo "⚠️  foo deployment not ready yet, checking pod status..."
-  kubectl describe deployment foo -n app 2>/dev/null || echo "Deployment foo not found"
+  echo "foo is not ready yet"
+  kubectl describe deployment foo -n app 2>/dev/null || echo "Could not find foo deployment"
 else
-  echo "✅ foo deployment is ready"
+  echo "foo deployment is ready and running"
 fi
 
-# Check bar deployment
-echo "Checking bar deployment..."
+echo ""
+echo "Now checking the bar deployment..."
 BAR_STATUS=$(kubectl get deployment bar -n app -o jsonpath='{.status.conditions[?(@.type=="Available")].status}' 2>/dev/null || echo "NotFound")
 if [ "$BAR_STATUS" != "True" ]; then
-  echo "⚠️  bar deployment not ready yet, checking pod status..."
-  kubectl describe deployment bar -n app 2>/dev/null || echo "Deployment bar not found"
+  echo "bar is not ready yet"
+  kubectl describe deployment bar -n app 2>/dev/null || echo "Could not find bar deployment"
 else
-  echo "✅ bar deployment is ready"
+  echo "bar deployment is ready and running"
 fi
 
-# Check ingress
-echo "Checking ingress..."
-kubectl get ingress app-ingress -n app -o jsonpath='{.spec.rules[0].host}' 2>/dev/null && echo " ✅ Ingress is configured" || echo "⚠️  Ingress not fully configured"
+# Check if ingress is configured
+echo ""
+echo "Step 2: Checking ingress configuration"
+echo "---"
 
-# Test connectivity via ingress
-echo "Testing connectivity via ingress controller..."
+echo "Looking for the ingress resource..."
+INGRESS_HOST=$(kubectl get ingress app-ingress -n app -o jsonpath='{.spec.rules[0].host}' 2>/dev/null)
+if [ -n "$INGRESS_HOST" ]; then
+  echo "Found ingress configured for: $INGRESS_HOST"
+else
+  echo "Ingress is not fully configured yet"
+fi
+
+# Test if the ingress controller is running
+echo ""
+echo "Step 3: Testing ingress controller connectivity"
+echo "---"
+
+echo "Looking for the ingress controller pod..."
 INGRESS_POD=$(kubectl get pods -n ingress-nginx -l app.kubernetes.io/component=controller -o jsonpath='{.items[0].metadata.name}' 2>/dev/null)
 
 if [ -z "$INGRESS_POD" ]; then
-  echo "❌ No ingress controller pod found"
+  echo "Could not find any ingress controller pods running"
+  echo "Available pods in ingress-nginx:"
   kubectl get pods -n ingress-nginx
   exit 1
 fi
 
-echo "Using ingress pod: $INGRESS_POD"
+echo "Found ingress controller pod: $INGRESS_POD"
+echo ""
 
-# Test foo
-echo "Testing foo endpoint..."
+# Test connection to foo through the ingress
+echo "Testing if we can reach foo through the ingress..."
 if kubectl exec -n ingress-nginx "$INGRESS_POD" -- curl -s -H "Host: foo.localhost" http://localhost/ > /dev/null 2>&1; then
-  echo "✅ Ingress routing for foo is working"
+  echo "foo is reachable through ingress"
 else
-  echo "⚠️  Ingress routing for foo - retrying..."
+  echo "Could not reach foo through ingress"
 fi
 
-# Test bar
-echo "Testing bar endpoint..."
+# Test connection to bar through the ingress
+echo ""
+echo "Testing if we can reach bar through the ingress..."
 if kubectl exec -n ingress-nginx "$INGRESS_POD" -- curl -s -H "Host: bar.localhost" http://localhost/ > /dev/null 2>&1; then
-  echo "✅ Ingress routing for bar is working"
+  echo "bar is reachable through ingress"
 else
-  echo "⚠️  Ingress routing for bar - retrying..."
+  echo "Could not reach bar through ingress"
 fi
 
 echo ""
-echo "✅ Health checks completed!"
+echo "Health checks complete"
+echo ""
