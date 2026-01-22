@@ -82,8 +82,8 @@ jobs:
       - name: Cleanup DNS entries
         if: always()
         run: |
-          sudo sed -i '' '/foo.localhost/d' /etc/hosts
-          sudo sed -i '' '/bar.localhost/d' /etc/hosts
+          sudo sed -i '/foo.localhost/d' /etc/hosts
+          sudo sed -i '/bar.localhost/d' /etc/hosts
       
       - name: Get load test results
         if: always()
@@ -115,3 +115,24 @@ jobs:
               issue_number: context.issue.number,
               body: "${{ steps.results.outputs.comment }}"
             });
+
+  create-pr:
+    needs: load-test
+    if: success() && github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    permissions:
+      pull-requests: write
+      contents: write
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Create PR after tests pass
+        uses: peter-evans/create-pull-request@v5
+        with:
+          commit-message: 'Load test passed - ready for merge'
+          title: 'Load test passed'
+          body: 'All load tests have passed successfully. Ready for merge.'
+          branch: test-passed-${{ github.run_number }}
+          base: main
+          delete-branch: true
