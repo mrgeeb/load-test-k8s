@@ -99,11 +99,13 @@ jobs:
             cat load-test-results.json > results.json
             cat load-test-results.txt
             
-            COMMENT=$(jq -r '
-              "Load Testing Results\n\nSummary\nTotal Requests: \(.totalRequests // 0)\nSuccessful Requests: \(.successfulRequests // 0)\nFailed Requests: \(.failedRequests // 0)\nFailure Rate: \(.failureRate // 0)%\nRequests per second: \(.requestsPerSec // 0)\n\nResponse Time Statistics (milliseconds)\nAverage: \(.stats.avg // 0)\nMin: \(.stats.min // 0)\nMax: \(.stats.max // 0)\nP50: \(.stats.p50 // 0)\nP90: \(.stats.p90 // 0)\nP95: \(.stats.p95 // 0)\nP99: \(.stats.p99 // 0)\n\nEndpoint Breakdown\n" + (if (.endpoints | type) == "array" then (.endpoints | map("\(.host): \(.successCount) passed, \(.failureCount) failed (average: \(.avgResponseTime)ms)") | join("\n")) else "No endpoint data" end) + "\n\nLoad test completed at '$(date -u +%Y-%m-%dT%H:%M:%SZ)'"
-            ' results.json)
-            
-            echo "comment=$COMMENT" >> $GITHUB_OUTPUT
+            {
+              echo 'comment<<EOF'
+              jq -r '
+                "Load Testing Results\n\nSummary\nTotal Requests: \(.totalRequests // 0)\nSuccessful Requests: \(.successfulRequests // 0)\nFailed Requests: \(.failedRequests // 0)\nFailure Rate: \(.failureRate // 0)%\nRequests per second: \(.requestsPerSec // 0)\n\nResponse Time Statistics (milliseconds)\nAverage: \(.stats.avg // 0)\nMin: \(.stats.min // 0)\nMax: \(.stats.max // 0)\nP50: \(.stats.p50 // 0)\nP90: \(.stats.p90 // 0)\nP95: \(.stats.p95 // 0)\nP99: \(.stats.p99 // 0)\n\nEndpoint Breakdown\n" + (if (.endpoints | type) == "array" then (.endpoints | map("\(.host): \(.successCount) passed, \(.failureCount) failed (average: \(.avgResponseTime)ms)") | join("\n")) else "No endpoint data" end) + "\n\nLoad test completed at '$(date -u +%Y-%m-%dT%H:%M:%SZ)'"
+              ' results.json
+              echo 'EOF'
+            } >> $GITHUB_OUTPUT
           else
             echo "Load test results file not found"
             ls -la
