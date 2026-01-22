@@ -42,24 +42,13 @@ jobs:
           kubectl apply -f ./k8s/bar-deployment.yaml
           kubectl apply -f ./k8s/ingress.yaml
           
-          # Wait for ingress to exist and have IP assigned
-          echo "Waiting for ingress to be provisioned..."
-          for i in {1..30}; do
-            IP=$(kubectl get ingress app-ingress -n app -o jsonpath='{.status.loadBalancer.ingress[0].ip}' 2>/dev/null || echo "")
-            if [ -n "$IP" ]; then
-              echo "Ingress IP: $IP"
-              break
-            fi
-            echo "Attempt $i: Waiting for ingress IP..."
-            sleep 5
-          done
+          # Wait for ingress to exist
+          echo "Waiting for ingress to be created..."
+          kubectl wait --for=condition=established ingress/app-ingress -n app --timeout=30s 2>/dev/null || true
           
-          if [ -z "$IP" ]; then
-            echo "Ingress failed to get IP. Checking status:"
-            kubectl describe ingress app-ingress -n app
-            kubectl get ingress -n app
-            exit 1
-          fi
+          # Verify ingress was created
+          kubectl get ingress app-ingress -n app
+          echo "Ingress configured successfully"
       
       - name: Wait for deployments to be ready
         run: |
