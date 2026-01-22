@@ -42,7 +42,7 @@ jobs:
           kubectl apply -f ./k8s/bar-deployment.yaml
           kubectl apply -f ./k8s/ingress.yaml
           # Wait for ingress to be ready
-          kubectl wait --for=condition=ready ingress/app-ingress -n app --timeout=60s
+          kubectl wait --for=condition=ready ingress/app-ingress -n app --timeout=300s || (echo "Ingress failed to become ready. Checking status:" && kubectl describe ingress app-ingress -n app && kubectl get ingress -n app && exit 1)
       
       - name: Wait for deployments to be ready
         run: |
